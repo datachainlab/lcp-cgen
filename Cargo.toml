@@ -1,0 +1,37 @@
+[package]
+name = "lcp-cgen"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+ibc = { version = "0.29.0", default-features = false, features = ["serde", "std"] }
+ibc-proto = { version = "0.26.0", default-features = false, features = ["parity-scale-codec", "borsh"] }
+ibc-test-framework = { version = "0.22.0", default-features = false }
+clap = { version = "3.2", features = ["derive"] }
+tempfile = "3"
+anyhow = { version = "1.0.56" }
+tokio = { version = "1.0" }
+log = "0.4.8"
+serde = { version = "1.0", default-features = false, features = ["alloc"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+base64 = { git = "https://github.com/marshallpierce/rust-base64", default-features = false, features = ["alloc"] }
+
+lcp-types = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
+host = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
+host-environment = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
+store = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
+commitments = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
+crypto = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
+keymanager = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
+enclave-api = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
+ecall-commands = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
+attestation-report = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
+relay-tendermint = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
+
+[features]
+default = []
+sgx-sw = [
+    "enclave-api/sgx-sw",
+    "ecall-commands/sgx-sw"
+]
