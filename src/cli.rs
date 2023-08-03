@@ -1,4 +1,4 @@
-use crate::gen::{CGenConfig, CGenSuite, Command};
+use crate::gen::{CGenConfig, CGenSuite, Command, RemoteAttestationConfig};
 use anyhow::Result;
 use clap::Parser;
 use enclave_api::Enclave;
@@ -32,15 +32,30 @@ pub struct Cli {
     /// Commands to process
     #[clap(long = "commands", help = "Commands to process", multiple = true)]
     pub commands: Vec<String>,
+
+    /// Whether to simulate the remote attestation
+    #[clap(long = "simulate", help = "Whether to simulate the remote attestation")]
+    pub simulate: bool,
+
+    /// Path to a der-encoded file that contains X.509 certificate
+    #[clap(
+        long = "signing_cert_path",
+        help = "Path to a der-encoded file that contains X.509 certificate"
+    )]
+    pub signing_cert_path: Option<PathBuf>,
+
+    /// Path to a PEM-encoded file that contains PKCS#8 private key
+    #[clap(
+        long = "signing_key",
+        help = "Path to a PEM-encoded file that contains PKCS#8 private key"
+    )]
+    pub signing_key_path: Option<PathBuf>,
 }
 
 impl Cli {
     pub fn run(self) -> Result<()> {
         let tmp_dir = TempDir::new()?;
         let home = tmp_dir.path();
-
-        let spid = std::env::var("SPID")?.as_bytes().to_vec();
-        let ias_key = std::env::var("IAS_KEY")?.as_bytes().to_vec();
 
         host::set_environment(Environment::new(
             home.into(),
@@ -50,21 +65,46 @@ impl Cli {
 
         let env = host::get_environment().unwrap();
         let ekm = EnclaveKeyManager::new(home)?;
-        let enclave = Enclave::create(self.enclave, ekm, env.store.clone())?;
+        let enclave = Enclave::create(&self.enclave, ekm, env.store.clone())?;
 
         let mut commands = vec![];
-        for c in self.commands {
-            commands.push(Command::from_str(&c)?);
+        for c in self.commands.iter() {
+            commands.push(Command::from_str(c)?);
         }
-        run_binary_channel_test(&CGenSuite::new(
-            CGenConfig {
-                spid,
-                ias_key,
-                out_dir: self.out_dir,
-            },
-            enclave,
-            commands,
-        ))?;
+
+        let config = self.build_config()?;
+        run_binary_channel_test(&CGenSuite::new(config, enclave, commands))?;
         Ok(())
+    }
+
+    #[cfg(not(feature = "simulation"))]
+    fn build_config(&self) -> Result<CGenConfig> {
+        let spid = std::env::var("SPID")?.as_bytes().to_vec();
+        let ias_key = std::env::var("IAS_KEY")?.as_bytes().to_vec();
+        Ok(CGenConfig {
+            ra_config: RemoteAttestationConfig::IAS { spid, ias_key },
+            out_dir: self.out_dir.clone(),
+        })
+    }
+
+    #[cfg(feature = "simulation")]
+    fn build_config(&self) -> Result<CGenConfig> {
+        use enclave_api::rsa::{pkcs1v15::SigningKey, pkcs8::DecodePrivateKey, RsaPrivateKey};
+        use enclave_api::sha2::Sha256;
+        let signing_cert = std::fs::read(self.signing_cert_path.as_ref().expect(
+            "if simulate is true, then signing_cert_path and signing_key_path must be provided",
+        ))?;
+        let signing_key = SigningKey::<Sha256>::new(RsaPrivateKey::read_pkcs8_pem_file(
+            self.signing_key_path.as_ref().expect(
+                "if simulate is true, then signing_cert_path and signing_key_path must be provided",
+            ),
+        )?);
+        Ok(CGenConfig {
+            ra_config: RemoteAttestationConfig::Simulate {
+                signing_cert,
+                signing_key,
+            },
+            out_dir: self.out_dir.clone(),
+        })
     }
 }

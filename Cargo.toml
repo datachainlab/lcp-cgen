@@ -30,8 +30,8 @@ attestation-report = { git = "https://github.com/datachainlab/lcp", branch = "et
 relay-tendermint = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
 
 [features]
-default = ["sgx-sw"]
-sgx-sw = [
+default = []
+simulation = [
     "enclave-api/sgx-sw",
     "ecall-commands/sgx-sw"
 ]

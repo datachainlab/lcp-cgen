@@ -46,9 +46,21 @@ impl CGenSuite {
 
 #[derive(Clone)]
 pub struct CGenConfig {
-    pub(crate) spid: Vec<u8>,
-    pub(crate) ias_key: Vec<u8>,
+    pub(crate) ra_config: RemoteAttestationConfig,
     pub(crate) out_dir: PathBuf,
+}
+
+#[derive(Clone)]
+pub enum RemoteAttestationConfig {
+    #[cfg(feature = "simulation")]
+    Simulate {
+        signing_cert: Vec<u8>,
+        signing_key: enclave_api::rsa::pkcs1v15::SigningKey<enclave_api::sha2::Sha256>,
+    },
+    IAS {
+        spid: Vec<u8>,
+        ias_key: Vec<u8>,
+    },
 }
 
 pub enum Command {
@@ -144,21 +156,71 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
             }
         };
         self.enclave_key = Some(res.pub_key.as_address());
-        let res = match self
-            .enclave
-            .ias_remote_attestation(IASRemoteAttestationInput {
-                target_enclave_key: res.pub_key.as_address(),
-                spid: self.config.spid.clone(),
-                ias_key: self.config.ias_key.clone(),
-            }) {
-            Ok(res) => res.report,
-            Err(e) => {
-                bail!("IAS Remote Attestation Failed {:?}!", e);
-            }
-        };
+        self.remote_attestation()
+    }
 
-        self.write_to_file("avr", &res)?;
-        Ok(())
+    #[cfg(not(feature = "simulation"))]
+    fn remote_attestation(&mut self) -> Result<(), anyhow::Error> {
+        match self.config.ra_config.clone() {
+            RemoteAttestationConfig::IAS { spid, ias_key } => {
+                let res = match self
+                    .enclave
+                    .ias_remote_attestation(IASRemoteAttestationInput {
+                        target_enclave_key: self.enclave_key.unwrap(),
+                        spid,
+                        ias_key,
+                    }) {
+                    Ok(res) => res.report,
+                    Err(e) => {
+                        bail!("IAS Remote Attestation Failed {:?}!", e);
+                    }
+                };
+
+                self.write_to_file("avr", &res)?;
+                Ok(())
+            }
+        }
+    }
+
+    #[cfg(feature = "simulation")]
+    fn remote_attestation(&mut self) -> Result<(), anyhow::Error> {
+        use attestation_report::EndorsedAttestationVerificationReport;
+        use enclave_api::rsa::{
+            pkcs1v15::SigningKey,
+            signature::{SignatureEncoding, Signer},
+        };
+        use enclave_api::sha2::Sha256;
+
+        match self.config.ra_config.clone() {
+            RemoteAttestationConfig::Simulate {
+                signing_cert,
+                signing_key,
+            } => {
+                let res = self.enclave.simulate_remote_attestation(
+                    ecall_commands::SimulateRemoteAttestationInput {
+                        target_enclave_key: self.enclave_key.unwrap(),
+                        advisory_ids: vec![],
+                        isv_enclave_quote_status: "OK".to_string(),
+                    },
+                    signing_key.clone(),
+                    signing_cert.clone(),
+                )?;
+                let avr_json = res.avr.to_canonical_json().unwrap();
+                let signature = signing_key.sign(avr_json.as_bytes()).to_vec();
+                self.write_to_file(
+                    "avr",
+                    &EndorsedAttestationVerificationReport {
+                        avr: avr_json,
+                        signature,
+                        signing_cert,
+                    },
+                )?;
+                Ok(())
+            }
+            _ => {
+                bail!("RA with IAS is not supported");
+            }
+        }
     }
 
     fn create_client(&mut self) -> Result<ClientId, anyhow::Error> {
