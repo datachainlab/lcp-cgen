@@ -129,9 +129,9 @@ pub struct JSONCommitmentProof {
 
 impl JSONSerializer for CommitmentProof {
     fn to_json_string(&self) -> Result<String, anyhow::Error> {
-        Ok(serde_json::to_string(&CommitmentProof {
+        Ok(serde_json::to_string(&JSONCommitmentProof {
             commitment_bytes: self.commitment_bytes.clone(),
-            signer: self.signer.clone(),
+            signer: self.signer.to_vec(),
             signature: self.signature.clone(),
         })?)
     }
