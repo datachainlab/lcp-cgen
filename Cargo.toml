@@ -17,17 +17,17 @@ serde = { version = "1.0", default-features = false, features = ["alloc"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 base64 = { git = "https://github.com/marshallpierce/rust-base64", default-features = false, features = ["alloc"] }
 
-lcp-types = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
-host = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
-host-environment = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment", default-features = false }
-store = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment", default-features = false }
-commitments = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
-crypto = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
-keymanager = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
-enclave-api = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment", default-features = false }
-ecall-commands = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
-attestation-report = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
-relay-tendermint = { git = "https://github.com/datachainlab/lcp", branch = "eth-abi-commitment" }
+lcp-types = { git = "https://github.com/datachainlab/lcp", branch = "main" }
+host = { git = "https://github.com/datachainlab/lcp", branch = "main" }
+host-environment = { git = "https://github.com/datachainlab/lcp", branch = "main", default-features = false }
+store = { git = "https://github.com/datachainlab/lcp", branch = "main", default-features = false }
+commitments = { git = "https://github.com/datachainlab/lcp", branch = "main" }
+crypto = { git = "https://github.com/datachainlab/lcp", branch = "main" }
+keymanager = { git = "https://github.com/datachainlab/lcp", branch = "main" }
+enclave-api = { git = "https://github.com/datachainlab/lcp", branch = "main", default-features = false }
+ecall-commands = { git = "https://github.com/datachainlab/lcp", branch = "main" }
+attestation-report = { git = "https://github.com/datachainlab/lcp", branch = "main" }
+relay-tendermint = { git = "https://github.com/datachainlab/lcp", branch = "main" }
 
 [features]
 default = []
