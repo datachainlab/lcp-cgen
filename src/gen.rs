@@ -1,3 +1,5 @@
+use crate::relayer::Relayer;
+use crate::relayer::{to_ibc_channel_id, to_ibc_connection_id, to_ibc_port_id};
 use crate::types::JSONSerializer;
 use anyhow::{anyhow, bail};
 use commitments::UpdateClientCommitment;
@@ -17,8 +19,6 @@ use ibc_proto::protobuf::Protobuf;
 use ibc_test_framework::prelude::*;
 use ibc_test_framework::util::random::random_u64_range;
 use lcp_types::{ClientId, Time};
-use relay_tendermint::types::{to_ibc_channel_id, to_ibc_connection_id, to_ibc_port_id};
-use relay_tendermint::Relayer;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::{fs::File, io::Write, path::PathBuf};
