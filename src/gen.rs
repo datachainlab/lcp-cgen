@@ -6,13 +6,13 @@ use commitments::UpdateClientCommitment;
 use crypto::Address;
 use ecall_commands::{
     CommitmentProofPair, GenerateEnclaveKeyInput, IASRemoteAttestationInput, InitClientInput,
-    UpdateClientInput, VerifyMembershipInput,
+    UpdateClientInput, VerifyMembershipInput, VerifyNonMembershipInput,
 };
 use enclave_api::{Enclave, EnclaveCommandAPI};
 use ibc::core::ics04_channel::packet::Sequence;
 use ibc::core::ics23_commitment::commitment::CommitmentProofBytes;
 use ibc::core::ics23_commitment::merkle::MerkleProof;
-use ibc::core::ics24_host::path::{ChannelEndPath, CommitmentPath, ConnectionPath};
+use ibc::core::ics24_host::path::{ChannelEndPath, CommitmentPath, ConnectionPath, ReceiptPath};
 use ibc::core::ics24_host::Path;
 use ibc::Height;
 use ibc_proto::protobuf::Protobuf;
@@ -68,6 +68,7 @@ pub enum Command {
     VerifyConnection,
     VerifyChannel,
     VerifyPacket,
+    VerifyPacketReceiptAbsence,
     WaitBlocks(u64),
 }
 
@@ -80,6 +81,7 @@ impl FromStr for Command {
             "verify_connection" => Ok(Command::VerifyConnection),
             "verify_channel" => Ok(Command::VerifyChannel),
             "verify_packet" => Ok(Command::VerifyPacket),
+            "verify_packet_receipt_absence" => Ok(Command::VerifyPacketReceiptAbsence),
             "wait_blocks" => {
                 if parts.len() != 2 {
                     bail!("`wait` requires one argument");
@@ -141,6 +143,9 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
                 Command::VerifyChannel => self.verify_channel(client_id.clone())?,
                 // TODO get sequence from command
                 Command::VerifyPacket => self.verify_packet(client_id.clone(), 1u64.into())?,
+                Command::VerifyPacketReceiptAbsence => {
+                    self.verify_packet_receipt_absence(client_id.clone(), 2u64.into())?
+                }
                 Command::WaitBlocks(n) => self.wait_blocks(*n)?,
             };
             self.command_sequence += 1;
@@ -391,6 +396,43 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
         self.write_to_file("verify_packet_input", &input)?;
         let res = self.enclave.verify_membership(input)?;
         self.write_to_file("verify_packet_result", &res.0)?;
+
+        Ok(())
+    }
+
+    fn verify_packet_receipt_absence(
+        &mut self,
+        client_id: ClientId,
+        sequence: Sequence,
+    ) -> Result<(), anyhow::Error> {
+        let res = self.rly.query_packet_receipt_proof(
+            to_ibc_port_id(self.channel.channel.a_side.port_id().clone()),
+            to_ibc_channel_id(self.channel.channel.a_side.channel_id().unwrap().clone()),
+            sequence,
+            self.client_latest_height,
+        )?;
+
+        let input = VerifyNonMembershipInput {
+            client_id,
+            prefix: "ibc".into(),
+            path: Path::Receipt(ReceiptPath {
+                port_id: to_ibc_port_id(self.channel.channel.a_side.port_id().clone()),
+                channel_id: to_ibc_channel_id(
+                    self.channel.channel.a_side.channel_id().unwrap().clone(),
+                ),
+                sequence,
+            })
+            .to_string(),
+            proof: CommitmentProofPair(
+                res.2.try_into().map_err(|e| anyhow!("{:?}", e))?,
+                merkle_proof_to_bytes(res.1)?,
+            ),
+            signer: self.enclave_key.unwrap(),
+        };
+
+        self.write_to_file("verify_packet_receipt_absence_input", &input)?;
+        let res = self.enclave.verify_non_membership(input)?;
+        self.write_to_file("verify_packet_receipt_absence_result", &res.0)?;
 
         Ok(())
     }

@@ -25,7 +25,10 @@ use ibc_relayer::chain::{
     client::ClientSettings,
     cosmos::{client::Settings, CosmosSdkChain},
     endpoint::ChainEndpoint,
-    requests::{IncludeProof, QueryChannelRequest, QueryHeight, QueryPacketCommitmentRequest},
+    requests::{
+        IncludeProof, QueryChannelRequest, QueryHeight, QueryPacketCommitmentRequest,
+        QueryPacketReceiptRequest,
+    },
 };
 use ibc_relayer::client_state::AnyClientState;
 use ibc_relayer::config::ChainConfig;
@@ -288,6 +291,35 @@ impl Relayer {
         };
         let res = self.chain.query_packet_commitment(
             QueryPacketCommitmentRequest {
+                port_id: to_relayer_port_id(port_id),
+                channel_id: to_relayer_channel_id(channel_id),
+                sequence: to_relayer_sequence(sequence),
+                height: QueryHeight::Specific(to_relayer_height(height)),
+            },
+            IncludeProof::Yes,
+        )?;
+        Ok((
+            res.0.into(),
+            MerkleProof {
+                proofs: res.1.unwrap().proofs,
+            },
+            height.increment(),
+        ))
+    }
+
+    pub fn query_packet_receipt_proof(
+        &self,
+        port_id: PortId,
+        channel_id: ChannelId,
+        sequence: Sequence,
+        height: Option<Height>, // height of consensus state
+    ) -> Result<(Vec<u8>, MerkleProof, Height)> {
+        let height = match height {
+            Some(height) => height.decrement().unwrap(),
+            None => self.query_latest_height()?.decrement().unwrap(),
+        };
+        let res = self.chain.query_packet_receipt(
+            QueryPacketReceiptRequest {
                 port_id: to_relayer_port_id(port_id),
                 channel_id: to_relayer_channel_id(channel_id),
                 sequence: to_relayer_sequence(sequence),
