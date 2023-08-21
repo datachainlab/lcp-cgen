@@ -4,6 +4,7 @@ use cli::Cli;
 
 mod cli;
 mod gen;
+mod relayer;
 mod types;
 
 fn main() -> Result<()> {
