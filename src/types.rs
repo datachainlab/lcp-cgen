@@ -1,6 +1,9 @@
 use attestation_report::EndorsedAttestationVerificationReport;
 use commitments::CommitmentProof;
-use ecall_commands::{InitClientInput, InitClientResult, UpdateClientInput, VerifyMembershipInput};
+use ecall_commands::{
+    InitClientInput, InitClientResult, UpdateClientInput, VerifyMembershipInput,
+    VerifyNonMembershipInput,
+};
 use lcp_types::ClientId;
 use serde::{Deserialize, Serialize};
 
@@ -154,6 +157,24 @@ impl JSONSerializer for VerifyMembershipInput {
             prefix: self.prefix.clone(),
             path: self.path.clone(),
             value: self.value.clone(),
+        })?)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct JSONVerifyNonMembershipInput {
+    pub client_id: ClientId,
+    #[serde(with = "serde_base64")]
+    pub prefix: Vec<u8>,
+    pub path: String,
+}
+
+impl JSONSerializer for VerifyNonMembershipInput {
+    fn to_json_string(&self) -> Result<String, anyhow::Error> {
+        Ok(serde_json::to_string(&JSONVerifyNonMembershipInput {
+            client_id: self.client_id.clone(),
+            prefix: self.prefix.clone(),
+            path: self.path.clone(),
         })?)
     }
 }
