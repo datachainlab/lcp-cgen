@@ -23,7 +23,7 @@ serde = { version = "1.0", default-features = false, features = ["alloc"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 base64 = { git = "https://github.com/marshallpierce/rust-base64", default-features = false, features = ["alloc"] }
 
-lcp-types = { git = "https://github.com/datachainlab/lcp", branch = "main" }
+lcp-types = { git = "https://github.com/datachainlab/lcp", branch = "main", features = ["ibc"] }
 host = { git = "https://github.com/datachainlab/lcp", branch = "main" }
 host-environment = { git = "https://github.com/datachainlab/lcp", branch = "main", default-features = false }
 store = { git = "https://github.com/datachainlab/lcp", branch = "main", default-features = false }
