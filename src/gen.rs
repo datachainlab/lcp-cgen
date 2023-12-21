@@ -2,7 +2,7 @@ use crate::relayer::Relayer;
 use crate::relayer::{to_ibc_channel_id, to_ibc_connection_id, to_ibc_port_id};
 use crate::types::JSONSerializer;
 use anyhow::{anyhow, bail};
-use commitments::UpdateClientCommitment;
+use commitments::UpdateClientMessage;
 use crypto::Address;
 use ecall_commands::{
     CommitmentProofPair, GenerateEnclaveKeyInput, IASRemoteAttestationInput, InitClientInput,
@@ -288,8 +288,8 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
 
         self.write_to_file("update_client_result", &res.0)?;
 
-        let commitment: UpdateClientCommitment = res.0.commitment()?.try_into()?;
-        assert!(self.chain_latest_provable_height == commitment.new_height.try_into()?);
+        let msg: UpdateClientMessage = res.0.message()?.try_into()?;
+        assert!(self.chain_latest_provable_height == msg.post_height.try_into()?);
         self.client_latest_height = Some(self.chain_latest_provable_height);
         Ok(())
     }

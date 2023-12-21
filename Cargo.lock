@@ -206,7 +206,7 @@ dependencies = [
 [[package]]
 name = "attestation-report"
 version = "0.1.0"
-source = "git+https://github.com/datachainlab/lcp?branch=main#c073f89517fcdc4f796c07ad420b0029bbc148db"
+source = "git+https://github.com/datachainlab/lcp?branch=message-aggregation#f540ee34c88e36d4f325ce929fa069db136e63ce"
 dependencies = [
  "base64 0.21.2 (git+https://github.com/marshallpierce/rust-base64)",
  "chrono",
@@ -729,7 +729,7 @@ dependencies = [
 [[package]]
 name = "commitments"
 version = "0.1.0"
-source = "git+https://github.com/datachainlab/lcp?branch=main#c073f89517fcdc4f796c07ad420b0029bbc148db"
+source = "git+https://github.com/datachainlab/lcp?branch=message-aggregation#f540ee34c88e36d4f325ce929fa069db136e63ce"
 dependencies = [
  "crypto",
  "ethabi",
@@ -867,7 +867,7 @@ checksum = "7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7"
 [[package]]
 name = "crypto"
 version = "0.1.0"
-source = "git+https://github.com/datachainlab/lcp?branch=main#c073f89517fcdc4f796c07ad420b0029bbc148db"
+source = "git+https://github.com/datachainlab/lcp?branch=message-aggregation#f540ee34c88e36d4f325ce929fa069db136e63ce"
 dependencies = [
  "flex-error",
  "hex",
@@ -1115,7 +1115,7 @@ checksum = "304e6508efa593091e97a9abbc10f90aa7ca635b6d2784feff3c89d41dd12272"
 [[package]]
 name = "ecall-commands"
 version = "0.1.0"
-source = "git+https://github.com/datachainlab/lcp?branch=main#c073f89517fcdc4f796c07ad420b0029bbc148db"
+source = "git+https://github.com/datachainlab/lcp?branch=message-aggregation#f540ee34c88e36d4f325ce929fa069db136e63ce"
 dependencies = [
  "attestation-report",
  "commitments",
@@ -1216,7 +1216,7 @@ dependencies = [
 [[package]]
 name = "enclave-api"
 version = "0.1.0"
-source = "git+https://github.com/datachainlab/lcp?branch=main#c073f89517fcdc4f796c07ad420b0029bbc148db"
+source = "git+https://github.com/datachainlab/lcp?branch=message-aggregation#f540ee34c88e36d4f325ce929fa069db136e63ce"
 dependencies = [
  "attestation-report",
  "bincode",
@@ -1745,7 +1745,7 @@ dependencies = [
 [[package]]
 name = "host"
 version = "0.1.0"
-source = "git+https://github.com/datachainlab/lcp?branch=main#c073f89517fcdc4f796c07ad420b0029bbc148db"
+source = "git+https://github.com/datachainlab/lcp?branch=message-aggregation#f540ee34c88e36d4f325ce929fa069db136e63ce"
 dependencies = [
  "bincode",
  "host-environment",
@@ -1760,7 +1760,7 @@ dependencies = [
 [[package]]
 name = "host-environment"
 version = "0.1.0"
-source = "git+https://github.com/datachainlab/lcp?branch=main#c073f89517fcdc4f796c07ad420b0029bbc148db"
+source = "git+https://github.com/datachainlab/lcp?branch=message-aggregation#f540ee34c88e36d4f325ce929fa069db136e63ce"
 dependencies = [
  "store",
 ]
@@ -2357,7 +2357,7 @@ dependencies = [
 [[package]]
 name = "keymanager"
 version = "0.1.0"
-source = "git+https://github.com/datachainlab/lcp?branch=main#c073f89517fcdc4f796c07ad420b0029bbc148db"
+source = "git+https://github.com/datachainlab/lcp?branch=message-aggregation#f540ee34c88e36d4f325ce929fa069db136e63ce"
 dependencies = [
  "attestation-report",
  "crypto",
@@ -2419,7 +2419,7 @@ dependencies = [
 [[package]]
 name = "lcp-proto"
 version = "0.1.0"
-source = "git+https://github.com/datachainlab/lcp?branch=main#c073f89517fcdc4f796c07ad420b0029bbc148db"
+source = "git+https://github.com/datachainlab/lcp?branch=message-aggregation#f540ee34c88e36d4f325ce929fa069db136e63ce"
 dependencies = [
  "ibc-proto 0.26.0",
  "prost",
@@ -2430,7 +2430,7 @@ dependencies = [
 [[package]]
 name = "lcp-types"
 version = "0.1.0"
-source = "git+https://github.com/datachainlab/lcp?branch=main#c073f89517fcdc4f796c07ad420b0029bbc148db"
+source = "git+https://github.com/datachainlab/lcp?branch=message-aggregation#f540ee34c88e36d4f325ce929fa069db136e63ce"
 dependencies = [
  "flex-error",
  "hex",
@@ -2846,7 +2846,7 @@ dependencies = [
 [[package]]
 name = "ocall-commands"
 version = "0.1.0"
-source = "git+https://github.com/datachainlab/lcp?branch=main#c073f89517fcdc4f796c07ad420b0029bbc148db"
+source = "git+https://github.com/datachainlab/lcp?branch=message-aggregation#f540ee34c88e36d4f325ce929fa069db136e63ce"
 dependencies = [
  "serde",
  "serde_with",
@@ -2857,7 +2857,7 @@ dependencies = [
 [[package]]
 name = "ocall-handler"
 version = "0.1.0"
-source = "git+https://github.com/datachainlab/lcp?branch=main#c073f89517fcdc4f796c07ad420b0029bbc148db"
+source = "git+https://github.com/datachainlab/lcp?branch=message-aggregation#f540ee34c88e36d4f325ce929fa069db136e63ce"
 dependencies = [
  "flex-error",
  "host-environment",
@@ -4336,7 +4336,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "store"
 version = "0.1.0"
-source = "git+https://github.com/datachainlab/lcp?branch=main#c073f89517fcdc4f796c07ad420b0029bbc148db"
+source = "git+https://github.com/datachainlab/lcp?branch=message-aggregation#f540ee34c88e36d4f325ce929fa069db136e63ce"
 dependencies = [
  "flex-error",
  "log",

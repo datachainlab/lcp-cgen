@@ -23,16 +23,16 @@ serde = { version = "1.0", default-features = false, features = ["alloc"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 base64 = { git = "https://github.com/marshallpierce/rust-base64", default-features = false, features = ["alloc"] }
 
-lcp-types = { git = "https://github.com/datachainlab/lcp", branch = "main", features = ["ibc"] }
-host = { git = "https://github.com/datachainlab/lcp", branch = "main" }
-host-environment = { git = "https://github.com/datachainlab/lcp", branch = "main", default-features = false }
-store = { git = "https://github.com/datachainlab/lcp", branch = "main", default-features = false }
-commitments = { git = "https://github.com/datachainlab/lcp", branch = "main" }
-crypto = { git = "https://github.com/datachainlab/lcp", branch = "main" }
-keymanager = { git = "https://github.com/datachainlab/lcp", branch = "main" }
-enclave-api = { git = "https://github.com/datachainlab/lcp", branch = "main", default-features = false }
-ecall-commands = { git = "https://github.com/datachainlab/lcp", branch = "main" }
-attestation-report = { git = "https://github.com/datachainlab/lcp", branch = "main" }
+lcp-types = { git = "https://github.com/datachainlab/lcp", branch = "message-aggregation", features = ["ibc"] }
+host = { git = "https://github.com/datachainlab/lcp", branch = "message-aggregation" }
+host-environment = { git = "https://github.com/datachainlab/lcp", branch = "message-aggregation", default-features = false }
+store = { git = "https://github.com/datachainlab/lcp", branch = "message-aggregation", default-features = false }
+commitments = { git = "https://github.com/datachainlab/lcp", branch = "message-aggregation" }
+crypto = { git = "https://github.com/datachainlab/lcp", branch = "message-aggregation" }
+keymanager = { git = "https://github.com/datachainlab/lcp", branch = "message-aggregation" }
+enclave-api = { git = "https://github.com/datachainlab/lcp", branch = "message-aggregation", default-features = false }
+ecall-commands = { git = "https://github.com/datachainlab/lcp", branch = "message-aggregation" }
+attestation-report = { git = "https://github.com/datachainlab/lcp", branch = "message-aggregation" }
 
 [features]
 default = []

@@ -89,7 +89,7 @@ impl JSONSerializer for InitClientResult {
         Ok(serde_json::to_string(&JSONInitClientResult {
             client_id: self.client_id.clone(),
             proof: JSONCommitmentProof {
-                commitment_bytes: proof.commitment_bytes,
+                message: proof.message,
                 signer: proof.signer.to_vec(),
                 signature: proof.signature,
             },
@@ -123,7 +123,7 @@ impl JSONSerializer for UpdateClientInput {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JSONCommitmentProof {
     #[serde(with = "serde_base64")]
-    pub commitment_bytes: Vec<u8>,
+    pub message: Vec<u8>,
     #[serde(with = "serde_base64")]
     pub signer: Vec<u8>,
     #[serde(with = "serde_base64")]
@@ -133,7 +133,7 @@ pub struct JSONCommitmentProof {
 impl JSONSerializer for CommitmentProof {
     fn to_json_string(&self) -> Result<String, anyhow::Error> {
         Ok(serde_json::to_string(&JSONCommitmentProof {
-            commitment_bytes: self.commitment_bytes.clone(),
+            message: self.message.clone(),
             signer: self.signer.to_vec(),
             signature: self.signature.clone(),
         })?)
