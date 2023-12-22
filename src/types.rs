@@ -1,10 +1,10 @@
 use attestation_report::EndorsedAttestationVerificationReport;
 use commitments::CommitmentProof;
 use ecall_commands::{
-    InitClientInput, InitClientResult, UpdateClientInput, VerifyMembershipInput,
-    VerifyNonMembershipInput,
+    AggregateMessagesInput, InitClientInput, InitClientResult, UpdateClientInput,
+    VerifyMembershipInput, VerifyNonMembershipInput,
 };
-use lcp_types::ClientId;
+use lcp_types::{ClientId, Height};
 use serde::{Deserialize, Serialize};
 
 pub trait JSONSerializer {
@@ -114,6 +114,27 @@ impl JSONSerializer for UpdateClientInput {
                 value: self.any_header.value.clone(),
             },
             include_state: self.include_state,
+            current_timestamp: self.current_timestamp.as_unix_timestamp_secs(),
+        })?;
+        Ok(s)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct JSONAggregateMessagesInput {
+    #[serde(with = "serde_base64")]
+    pub signer: Vec<u8>,
+    pub messages: Vec<String>,
+    pub signatures: Vec<String>,
+    pub current_timestamp: u64, // seconds
+}
+
+impl JSONSerializer for AggregateMessagesInput {
+    fn to_json_string(&self) -> Result<String, anyhow::Error> {
+        let s = serde_json::to_string(&JSONAggregateMessagesInput {
+            signer: self.signer.to_vec(),
+            messages: self.messages.iter().map(base64::encode).collect(),
+            signatures: self.signatures.iter().map(base64::encode).collect(),
             current_timestamp: self.current_timestamp.as_unix_timestamp_secs(),
         })?;
         Ok(s)
