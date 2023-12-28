@@ -2,11 +2,12 @@ use crate::relayer::Relayer;
 use crate::relayer::{to_ibc_channel_id, to_ibc_connection_id, to_ibc_port_id};
 use crate::types::JSONSerializer;
 use anyhow::{anyhow, bail};
-use commitments::UpdateClientCommitment;
+use commitments::{CommitmentProof, UpdateClientMessage};
 use crypto::Address;
 use ecall_commands::{
-    CommitmentProofPair, GenerateEnclaveKeyInput, IASRemoteAttestationInput, InitClientInput,
-    UpdateClientInput, VerifyMembershipInput, VerifyNonMembershipInput,
+    AggregateMessagesInput, CommitmentProofPair, GenerateEnclaveKeyInput,
+    IASRemoteAttestationInput, InitClientInput, UpdateClientInput, VerifyMembershipInput,
+    VerifyNonMembershipInput,
 };
 use enclave_api::{Enclave, EnclaveCommandAPI};
 use ibc::core::ics04_channel::packet::Sequence;
@@ -65,6 +66,7 @@ pub enum RemoteAttestationConfig {
 
 pub enum Command {
     UpdateClient,
+    AggregateMessages(u64, u64),
     VerifyConnection,
     VerifyChannel,
     VerifyPacket,
@@ -78,6 +80,15 @@ impl FromStr for Command {
         let parts: Vec<&str> = s.split(':').collect();
         match parts[0] {
             "update_client" => Ok(Command::UpdateClient),
+            "aggregate_messages" => {
+                if parts.len() != 3 {
+                    bail!("`aggregate_update_clients` requires two arguments");
+                }
+                Ok(Command::AggregateMessages(
+                    u64::from_str(parts[1])?,
+                    u64::from_str(parts[2])?,
+                ))
+            }
             "verify_connection" => Ok(Command::VerifyConnection),
             "verify_channel" => Ok(Command::VerifyChannel),
             "verify_packet" => Ok(Command::VerifyPacket),
@@ -138,7 +149,12 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
         for cmd in commands.iter() {
             assert!(self.command_sequence < 1000);
             match cmd {
-                Command::UpdateClient => self.update_client(client_id.clone())?,
+                Command::UpdateClient => {
+                    self.update_client(client_id.clone(), false)?;
+                }
+                Command::AggregateMessages(interval, msg_num) => {
+                    self.aggregate_messages(client_id.clone(), *interval, *msg_num)?
+                }
                 Command::VerifyConnection => self.verify_connection(client_id.clone())?,
                 Command::VerifyChannel => self.verify_channel(client_id.clone())?,
                 // TODO get sequence from command
@@ -263,7 +279,11 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
         Ok(res.client_id)
     }
 
-    fn update_client(&mut self, client_id: ClientId) -> Result<(), anyhow::Error> {
+    fn update_client(
+        &mut self,
+        client_id: ClientId,
+        no_logs: bool,
+    ) -> Result<CommitmentProof, anyhow::Error> {
         assert!(
             self.chain_latest_provable_height > self.client_latest_height.unwrap(),
             "To update the client, you need to advance block's height with `wait_blocks`"
@@ -280,17 +300,51 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
             signer: self.enclave_key.unwrap(),
         };
 
-        self.write_to_file("update_client_input", &input)?;
+        if !no_logs {
+            self.write_to_file("update_client_input", &input)?;
+        }
 
         let res = self.enclave.update_client(input)?;
         log::info!("update_client's result is {:?}", res);
         assert!(res.0.is_proven());
 
-        self.write_to_file("update_client_result", &res.0)?;
+        if !no_logs {
+            self.write_to_file("update_client_result", &res.0)?;
+        }
 
-        let commitment: UpdateClientCommitment = res.0.commitment()?.try_into()?;
-        assert!(self.chain_latest_provable_height == commitment.new_height.try_into()?);
+        let msg: UpdateClientMessage = res.0.message()?.try_into()?;
+        assert!(self.chain_latest_provable_height == msg.post_height.try_into()?);
         self.client_latest_height = Some(self.chain_latest_provable_height);
+        Ok(res.0)
+    }
+
+    fn aggregate_messages(
+        &mut self,
+        client_id: ClientId,
+        interval: u64,
+        msg_num: u64,
+    ) -> Result<(), anyhow::Error> {
+        assert!(msg_num > 0 && interval > 0, "invalid arguments");
+        let mut proofs = Vec::new();
+        for _ in 0..msg_num {
+            let proof = self.update_client(client_id.clone(), true)?;
+            self.wait_blocks(interval)?;
+            proofs.push(proof);
+        }
+        let messages = proofs
+            .iter()
+            .map(|p| p.message().map(|m| m.to_bytes()))
+            .collect::<Result<_, _>>()?;
+        let signatures = proofs.into_iter().map(|p| p.signature).collect();
+        let input = AggregateMessagesInput {
+            messages,
+            signatures,
+            current_timestamp: Time::now(),
+            signer: self.enclave_key.unwrap(),
+        };
+        self.write_to_file("aggregate_messages_input", &input)?;
+        let res = self.enclave.aggregate_messages(input)?;
+        self.write_to_file("aggregate_messages_result", &res.0)?;
         Ok(())
     }
 

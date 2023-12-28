@@ -1,10 +1,10 @@
 use attestation_report::EndorsedAttestationVerificationReport;
 use commitments::CommitmentProof;
 use ecall_commands::{
-    InitClientInput, InitClientResult, UpdateClientInput, VerifyMembershipInput,
-    VerifyNonMembershipInput,
+    AggregateMessagesInput, InitClientInput, InitClientResult, UpdateClientInput,
+    VerifyMembershipInput, VerifyNonMembershipInput,
 };
-use lcp_types::ClientId;
+use lcp_types::{ClientId, Height};
 use serde::{Deserialize, Serialize};
 
 pub trait JSONSerializer {
@@ -89,7 +89,7 @@ impl JSONSerializer for InitClientResult {
         Ok(serde_json::to_string(&JSONInitClientResult {
             client_id: self.client_id.clone(),
             proof: JSONCommitmentProof {
-                commitment_bytes: proof.commitment_bytes,
+                message: proof.message,
                 signer: proof.signer.to_vec(),
                 signature: proof.signature,
             },
@@ -121,9 +121,30 @@ impl JSONSerializer for UpdateClientInput {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct JSONAggregateMessagesInput {
+    #[serde(with = "serde_base64")]
+    pub signer: Vec<u8>,
+    pub messages: Vec<String>,
+    pub signatures: Vec<String>,
+    pub current_timestamp: u64, // seconds
+}
+
+impl JSONSerializer for AggregateMessagesInput {
+    fn to_json_string(&self) -> Result<String, anyhow::Error> {
+        let s = serde_json::to_string(&JSONAggregateMessagesInput {
+            signer: self.signer.to_vec(),
+            messages: self.messages.iter().map(base64::encode).collect(),
+            signatures: self.signatures.iter().map(base64::encode).collect(),
+            current_timestamp: self.current_timestamp.as_unix_timestamp_secs(),
+        })?;
+        Ok(s)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct JSONCommitmentProof {
     #[serde(with = "serde_base64")]
-    pub commitment_bytes: Vec<u8>,
+    pub message: Vec<u8>,
     #[serde(with = "serde_base64")]
     pub signer: Vec<u8>,
     #[serde(with = "serde_base64")]
@@ -133,7 +154,7 @@ pub struct JSONCommitmentProof {
 impl JSONSerializer for CommitmentProof {
     fn to_json_string(&self) -> Result<String, anyhow::Error> {
         Ok(serde_json::to_string(&JSONCommitmentProof {
-            commitment_bytes: self.commitment_bytes.clone(),
+            message: self.message.clone(),
             signer: self.signer.to_vec(),
             signature: self.signature.clone(),
         })?)
