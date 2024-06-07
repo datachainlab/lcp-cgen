@@ -65,7 +65,7 @@ impl Cli {
 
         let env = host::get_environment().unwrap();
         let ekm = EnclaveKeyManager::new(home)?;
-        let enclave = Enclave::create(&self.enclave, ekm, env.store.clone())?;
+        let enclave = Enclave::create(&self.enclave, false, ekm, env.store.clone())?;
 
         let mut commands = vec![];
         for c in self.commands.iter() {

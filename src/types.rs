@@ -1,8 +1,8 @@
 use attestation_report::EndorsedAttestationVerificationReport;
 use commitments::CommitmentProof;
 use ecall_commands::{
-    AggregateMessagesInput, InitClientInput, InitClientResult, UpdateClientInput,
-    VerifyMembershipInput, VerifyNonMembershipInput,
+    AggregateMessagesInput, InitClientInput, UpdateClientInput, VerifyMembershipInput,
+    VerifyNonMembershipInput,
 };
 use lcp_types::{ClientId, Height};
 use serde::{Deserialize, Serialize};
@@ -83,17 +83,9 @@ pub struct JSONInitClientResult {
     pub proof: JSONCommitmentProof,
 }
 
-impl JSONSerializer for InitClientResult {
+impl JSONSerializer for JSONInitClientResult {
     fn to_json_string(&self) -> Result<String, anyhow::Error> {
-        let proof = self.proof.clone();
-        Ok(serde_json::to_string(&JSONInitClientResult {
-            client_id: self.client_id.clone(),
-            proof: JSONCommitmentProof {
-                message: proof.message,
-                signer: proof.signer.to_vec(),
-                signature: proof.signature,
-            },
-        })?)
+        Ok(serde_json::to_string(self)?)
     }
 }
 

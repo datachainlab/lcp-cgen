@@ -1,8 +1,8 @@
 use crate::relayer::Relayer;
 use crate::relayer::{to_ibc_channel_id, to_ibc_connection_id, to_ibc_port_id};
-use crate::types::JSONSerializer;
+use crate::types::{JSONCommitmentProof, JSONInitClientResult, JSONSerializer};
 use anyhow::{anyhow, bail};
-use commitments::{CommitmentProof, UpdateClientMessage};
+use commitments::{CommitmentProof, UpdateStateProxyMessage};
 use crypto::Address;
 use ecall_commands::{
     AggregateMessagesInput, CommitmentProofPair, GenerateEnclaveKeyInput,
@@ -16,6 +16,7 @@ use ibc::core::ics23_commitment::merkle::MerkleProof;
 use ibc::core::ics24_host::path::{ChannelEndPath, CommitmentPath, ConnectionPath, ReceiptPath};
 use ibc::core::ics24_host::Path;
 use ibc::Height;
+use ibc_proto::ibc::core::client;
 use ibc_proto::protobuf::Protobuf;
 use ibc_test_framework::prelude::*;
 use ibc_test_framework::util::random::random_u64_range;
@@ -113,6 +114,7 @@ pub struct CommandFileGenerator<'e, ChainA: ChainHandle, ChainB: ChainHandle> {
     channel: ConnectedChannel<ChainA, ChainB>,
     command_sequence: u64,
 
+    client_counter: u64,
     client_latest_height: Option<Height>, // latest height of client state
     chain_latest_provable_height: Height, // latest provable height of chainA
 }
@@ -132,6 +134,7 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
             enclave_key: None,
             channel,
             command_sequence: 1,
+            client_counter: 0,
             client_latest_height: None,
             chain_latest_provable_height,
         }
@@ -255,7 +258,9 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
             consensus_state
         );
 
+        let client_id = ClientId::new("07-tendermint", self.client_counter)?;
         let input = InitClientInput {
+            client_id: client_id.to_string(),
             any_client_state: client_state,
             any_consensus_state: consensus_state,
             current_timestamp: Time::now(),
@@ -266,17 +271,25 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
 
         let res = self.enclave.init_client(input).unwrap();
         assert!(!res.proof.is_proven());
+        self.client_counter += 1;
 
-        log::info!(
-            "generated client id is {}",
-            res.client_id.as_str().to_string()
-        );
+        log::info!("generated client id is {}", client_id);
 
-        self.write_to_file("init_client_result", &res)?;
+        self.write_to_file(
+            "init_client_result",
+            &JSONInitClientResult {
+                client_id: client_id.clone(),
+                proof: JSONCommitmentProof {
+                    message: res.proof.message,
+                    signer: res.proof.signer.to_vec(),
+                    signature: res.proof.signature,
+                },
+            },
+        )?;
 
         self.client_latest_height = Some(self.chain_latest_provable_height);
 
-        Ok(res.client_id)
+        Ok(client_id)
     }
 
     fn update_client(
@@ -312,7 +325,7 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
             self.write_to_file("update_client_result", &res.0)?;
         }
 
-        let msg: UpdateClientMessage = res.0.message()?.try_into()?;
+        let msg: UpdateStateProxyMessage = res.0.message()?.try_into()?;
         assert!(self.chain_latest_provable_height == msg.post_height.try_into()?);
         self.client_latest_height = Some(self.chain_latest_provable_height);
         Ok(res.0)
