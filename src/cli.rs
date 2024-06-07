@@ -33,6 +33,9 @@ pub struct Cli {
     #[clap(long = "commands", help = "Commands to process", multiple = true)]
     pub commands: Vec<String>,
 
+    #[clap(long = "eknum", default_value = "1", help = "Enclave key number")]
+    pub eknum: u32,
+
     /// Whether to simulate the remote attestation
     #[clap(long = "simulate", help = "Whether to simulate the remote attestation")]
     pub simulate: bool,
@@ -65,7 +68,7 @@ impl Cli {
 
         let env = host::get_environment().unwrap();
         let ekm = EnclaveKeyManager::new(home)?;
-        let enclave = Enclave::create(&self.enclave, false, ekm, env.store.clone())?;
+        let enclave = Enclave::create(&self.enclave, true, ekm, env.store.clone())?;
 
         let mut commands = vec![];
         for c in self.commands.iter() {
@@ -73,7 +76,7 @@ impl Cli {
         }
 
         let config = self.build_config()?;
-        run_binary_channel_test(&CGenSuite::new(config, enclave, commands))?;
+        run_binary_channel_test(&CGenSuite::new(config, enclave, commands, self.eknum))?;
         Ok(())
     }
 

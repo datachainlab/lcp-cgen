@@ -4,7 +4,7 @@ use ecall_commands::{
     AggregateMessagesInput, InitClientInput, UpdateClientInput, VerifyMembershipInput,
     VerifyNonMembershipInput,
 };
-use lcp_types::{ClientId, Height};
+use lcp_types::ClientId;
 use serde::{Deserialize, Serialize};
 
 pub trait JSONSerializer {
