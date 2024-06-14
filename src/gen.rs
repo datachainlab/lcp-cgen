@@ -1,8 +1,8 @@
 use crate::relayer::Relayer;
 use crate::relayer::{to_ibc_channel_id, to_ibc_connection_id, to_ibc_port_id};
-use crate::types::JSONSerializer;
+use crate::types::{JSONCommitmentProof, JSONInitClientResult, JSONSerializer};
 use anyhow::{anyhow, bail};
-use commitments::{CommitmentProof, UpdateClientMessage};
+use commitments::{CommitmentProof, UpdateStateProxyMessage};
 use crypto::Address;
 use ecall_commands::{
     AggregateMessagesInput, CommitmentProofPair, GenerateEnclaveKeyInput,
@@ -29,6 +29,7 @@ pub struct CGenSuite {
     config: CGenConfig,
     enclave: Enclave<store::memory::MemStore>,
     commands: Vec<Command>,
+    eknum: u32,
 }
 
 impl CGenSuite {
@@ -36,11 +37,13 @@ impl CGenSuite {
         config: CGenConfig,
         enclave: Enclave<store::memory::MemStore>,
         commands: Vec<Command>,
+        eknum: u32,
     ) -> Self {
         Self {
             config,
             enclave,
             commands,
+            eknum,
         }
     }
 }
@@ -65,12 +68,14 @@ pub enum RemoteAttestationConfig {
 }
 
 pub enum Command {
-    UpdateClient,
-    AggregateMessages(u64, u64),
-    VerifyConnection,
-    VerifyChannel,
-    VerifyPacket,
-    VerifyPacketReceiptAbsence,
+    GenerateEnclaveKey,
+    CreateClient(u64),
+    UpdateClient(Vec<usize>),
+    AggregateMessages(u64, u64, u64),
+    VerifyConnection(u64),
+    VerifyChannel(u64),
+    VerifyPacket(u64),
+    VerifyPacketReceiptAbsence(u64),
     WaitBlocks(u64),
 }
 
@@ -79,20 +84,61 @@ impl FromStr for Command {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split(':').collect();
         match parts[0] {
-            "update_client" => Ok(Command::UpdateClient),
+            "generate_enclave_key" => Ok(Command::GenerateEnclaveKey),
+            "create_client" => {
+                if parts.len() != 2 {
+                    bail!("`create_client` requires one argument");
+                }
+                Ok(Command::CreateClient(u64::from_str(parts[1])?))
+            }
+            "update_client" => {
+                if parts.len() != 2 {
+                    bail!("`update_client` requires one argument");
+                }
+                let parts: Vec<&str> = parts[1].split(',').collect();
+                Ok(Command::UpdateClient(
+                    parts
+                        .iter()
+                        .map(|s| usize::from_str(s))
+                        .collect::<Result<_, _>>()?,
+                ))
+            }
             "aggregate_messages" => {
-                if parts.len() != 3 {
-                    bail!("`aggregate_update_clients` requires two arguments");
+                if parts.len() != 4 {
+                    bail!("`aggregate_messages` requires three arguments");
                 }
                 Ok(Command::AggregateMessages(
                     u64::from_str(parts[1])?,
                     u64::from_str(parts[2])?,
+                    u64::from_str(parts[3])?,
                 ))
             }
-            "verify_connection" => Ok(Command::VerifyConnection),
-            "verify_channel" => Ok(Command::VerifyChannel),
-            "verify_packet" => Ok(Command::VerifyPacket),
-            "verify_packet_receipt_absence" => Ok(Command::VerifyPacketReceiptAbsence),
+            "verify_connection" => {
+                if parts.len() != 2 {
+                    bail!("`verify_connection` requires one argument");
+                }
+                Ok(Command::VerifyConnection(u64::from_str(parts[1])?))
+            }
+            "verify_channel" => {
+                if parts.len() != 2 {
+                    bail!("`verify_channel` requires one argument");
+                }
+                Ok(Command::VerifyChannel(u64::from_str(parts[1])?))
+            }
+            "verify_packet" => {
+                if parts.len() != 2 {
+                    bail!("`verify_packet` requires one argument");
+                }
+                Ok(Command::VerifyPacket(u64::from_str(parts[1])?))
+            }
+            "verify_packet_receipt_absence" => {
+                if parts.len() != 2 {
+                    bail!("`verify_packet_receipt_absence` requires one argument");
+                }
+                Ok(Command::VerifyPacketReceiptAbsence(u64::from_str(
+                    parts[1],
+                )?))
+            }
             "wait_blocks" => {
                 if parts.len() != 2 {
                     bail!("`wait` requires one argument");
@@ -109,10 +155,11 @@ pub struct CommandFileGenerator<'e, ChainA: ChainHandle, ChainB: ChainHandle> {
     enclave: &'e Enclave<store::memory::MemStore>,
     rly: Relayer,
 
-    enclave_key: Option<Address>,
+    enclave_key: Vec<Address>,
     channel: ConnectedChannel<ChainA, ChainB>,
     command_sequence: u64,
 
+    client_counter: u64,
     client_latest_height: Option<Height>, // latest height of client state
     chain_latest_provable_height: Height, // latest provable height of chainA
 }
@@ -129,65 +176,102 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
             config,
             enclave,
             rly,
-            enclave_key: None,
+            enclave_key: Default::default(),
             channel,
             command_sequence: 1,
+            client_counter: 0,
             client_latest_height: None,
             chain_latest_provable_height,
         }
     }
 
-    pub fn gen(&mut self, commands: &[Command], wait_blocks: u64) -> Result<(), anyhow::Error> {
+    pub fn gen(
+        &mut self,
+        commands: &[Command],
+        wait_blocks: u64,
+        eknum: u32,
+    ) -> Result<(), anyhow::Error> {
+        if eknum == 0 {
+            bail!("`eknum` must be greater than 0");
+        }
         if wait_blocks > 0 {
             self.wait_blocks(wait_blocks)?;
         }
-        self.generate_enclave_key()?;
-        self.command_sequence += 1;
-        let client_id = self.create_client()?;
-        self.command_sequence += 1;
+        // generate enclave key `eknum` times
+        for _ in 0..eknum {
+            self.generate_enclave_key()?;
+            self.command_sequence += 1;
+        }
+        let (seq, client_id) = self.create_client(0)?;
+        self.command_sequence += seq;
+        self.wait_blocks(1)?;
 
         for cmd in commands.iter() {
             assert!(self.command_sequence < 1000);
-            match cmd {
-                Command::UpdateClient => {
-                    self.update_client(client_id.clone(), false)?;
+            self.command_sequence += match cmd {
+                Command::GenerateEnclaveKey => self.generate_enclave_key()?,
+                Command::CreateClient(ek_index) => self.create_client(*ek_index as usize)?.0,
+                Command::UpdateClient(ek_indice) => {
+                    self.update_client(client_id.clone(), ek_indice.clone(), false)?
+                        .0
                 }
-                Command::AggregateMessages(interval, msg_num) => {
-                    self.aggregate_messages(client_id.clone(), *interval, *msg_num)?
+                Command::AggregateMessages(ek_index, interval, msg_num) => self
+                    .aggregate_messages(
+                        client_id.clone(),
+                        *ek_index as usize,
+                        *interval,
+                        *msg_num,
+                    )?,
+                Command::VerifyConnection(ek_index) => {
+                    self.verify_connection(client_id.clone(), *ek_index as usize)?
                 }
-                Command::VerifyConnection => self.verify_connection(client_id.clone())?,
-                Command::VerifyChannel => self.verify_channel(client_id.clone())?,
+                Command::VerifyChannel(ek_index) => {
+                    self.verify_channel(client_id.clone(), *ek_index as usize)?
+                }
                 // TODO get sequence from command
-                Command::VerifyPacket => self.verify_packet(client_id.clone(), 1u64.into())?,
-                Command::VerifyPacketReceiptAbsence => {
-                    self.verify_packet_receipt_absence(client_id.clone(), 2u64.into())?
+                Command::VerifyPacket(ek_index) => {
+                    self.verify_packet(client_id.clone(), *ek_index as usize, 1u64.into())?
                 }
-                Command::WaitBlocks(n) => self.wait_blocks(*n)?,
+                Command::VerifyPacketReceiptAbsence(ek_index) => self
+                    .verify_packet_receipt_absence(
+                        client_id.clone(),
+                        *ek_index as usize,
+                        2u64.into(),
+                    )?,
+                Command::WaitBlocks(n) => {
+                    self.wait_blocks(*n)?;
+                    0
+                }
             };
-            self.command_sequence += 1;
         }
         Ok(())
     }
 
-    fn generate_enclave_key(&mut self) -> Result<(), anyhow::Error> {
+    fn generate_enclave_key(&mut self) -> Result<u64, anyhow::Error> {
         let res = match self.enclave.generate_enclave_key(GenerateEnclaveKeyInput) {
             Ok(res) => res,
             Err(e) => {
-                bail!("Init Enclave Failed {:?}!", e);
+                bail!("Init Enclave Failed {:?}", e);
             }
         };
-        self.enclave_key = Some(res.pub_key.as_address());
-        self.remote_attestation()
+        info!(
+            "generated enclave key: addr={:?} index={}",
+            res.pub_key.as_address(),
+            self.enclave_key.len()
+        );
+        self.enclave_key.push(res.pub_key.as_address());
+        self.remote_attestation(res.pub_key.as_address())?;
+        Ok(1)
     }
 
     #[cfg(not(feature = "simulation"))]
-    fn remote_attestation(&mut self) -> Result<(), anyhow::Error> {
+    fn remote_attestation(&mut self, ek: Address) -> Result<(), anyhow::Error> {
         match self.config.ra_config.clone() {
             RemoteAttestationConfig::IAS { spid, ias_key } => {
                 let res = match self
                     .enclave
                     .ias_remote_attestation(IASRemoteAttestationInput {
-                        target_enclave_key: self.enclave_key.unwrap(),
+                        target_enclave_key: ek,
                         spid,
                         ias_key,
                     }) {
@@ -204,7 +288,7 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
     }
 
     #[cfg(feature = "simulation")]
-    fn remote_attestation(&mut self) -> Result<(), anyhow::Error> {
+    fn remote_attestation(&mut self, ek: Address) -> Result<(), anyhow::Error> {
         use attestation_report::EndorsedAttestationVerificationReport;
         use enclave_api::rsa::{
             pkcs1v15::SigningKey,
@@ -219,7 +303,7 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
             } => {
                 let res = self.enclave.simulate_remote_attestation(
                     ecall_commands::SimulateRemoteAttestationInput {
-                        target_enclave_key: self.enclave_key.unwrap(),
+                        target_enclave_key: ek,
                         advisory_ids: vec![],
                         isv_enclave_quote_status: "OK".to_string(),
                     },
@@ -244,7 +328,7 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
         }
     }
 
-    fn create_client(&mut self) -> Result<ClientId, anyhow::Error> {
+    fn create_client(&mut self, ek_index: usize) -> Result<(u64, ClientId), anyhow::Error> {
         let (client_state, consensus_state) = self
             .rly
             .fetch_state_as_any(self.chain_latest_provable_height)?;
@@ -255,100 +339,126 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
             consensus_state
         );
 
+        let client_id = ClientId::new("07-tendermint", self.client_counter)?;
         let input = InitClientInput {
+            client_id: client_id.to_string(),
             any_client_state: client_state,
             any_consensus_state: consensus_state,
             current_timestamp: Time::now(),
-            signer: self.enclave_key.unwrap(),
+            signer: self.enclave_key[ek_index],
         };
 
         self.write_to_file("init_client_input", &input)?;
 
         let res = self.enclave.init_client(input).unwrap();
         assert!(!res.proof.is_proven());
+        self.client_counter += 1;
 
-        log::info!(
-            "generated client id is {}",
-            res.client_id.as_str().to_string()
-        );
+        log::info!("generated client id is {}", client_id);
 
-        self.write_to_file("init_client_result", &res)?;
+        self.write_to_file(
+            "init_client_result",
+            &JSONInitClientResult {
+                client_id: client_id.clone(),
+                proof: JSONCommitmentProof {
+                    message: res.proof.message,
+                    signer: res.proof.signer.to_vec(),
+                    signature: res.proof.signature,
+                },
+            },
+        )?;
 
         self.client_latest_height = Some(self.chain_latest_provable_height);
 
-        Ok(res.client_id)
+        Ok((1, client_id))
     }
 
     fn update_client(
         &mut self,
         client_id: ClientId,
+        ek_indice: Vec<usize>,
         no_logs: bool,
-    ) -> Result<CommitmentProof, anyhow::Error> {
+    ) -> Result<(u64, CommitmentProof), anyhow::Error> {
+        assert!(ek_indice.len() > 0, "invalid arguments");
         assert!(
             self.chain_latest_provable_height > self.client_latest_height.unwrap(),
             "To update the client, you need to advance block's height with `wait_blocks`"
         );
-        let target_header = self.rly.create_header(
-            self.client_latest_height.unwrap(),
-            self.chain_latest_provable_height,
-        )?;
-        let input = UpdateClientInput {
-            client_id,
-            any_header: target_header,
-            current_timestamp: Time::now(),
-            include_state: true,
-            signer: self.enclave_key.unwrap(),
-        };
+        let trusted_height = self.client_latest_height.unwrap();
 
-        if !no_logs {
-            self.write_to_file("update_client_input", &input)?;
+        let target_header = self
+            .rly
+            .create_header(trusted_height, self.chain_latest_provable_height)?;
+
+        let mut proofs = Vec::new();
+        for ek_index in ek_indice.iter() {
+            let input = UpdateClientInput {
+                client_id: client_id.clone(),
+                any_header: target_header.clone(),
+                current_timestamp: Time::now(),
+                include_state: true,
+                signer: self.enclave_key[*ek_index],
+            };
+
+            info!("update_client's input is {:?}", input);
+
+            if !no_logs {
+                self.write_to_file("update_client_input", &input)?;
+            }
+
+            let res = self.enclave.update_client(input)?;
+            info!("update_client's result is {:?}", res);
+            assert!(res.0.is_proven());
+
+            if !no_logs {
+                self.write_to_file("update_client_result", &res.0)?;
+            }
+
+            let msg: UpdateStateProxyMessage = res.0.message()?.try_into()?;
+            assert!(self.chain_latest_provable_height == msg.post_height.try_into()?);
+            proofs.push(res.0);
+            self.command_sequence += 1;
         }
-
-        let res = self.enclave.update_client(input)?;
-        log::info!("update_client's result is {:?}", res);
-        assert!(res.0.is_proven());
-
-        if !no_logs {
-            self.write_to_file("update_client_result", &res.0)?;
-        }
-
-        let msg: UpdateClientMessage = res.0.message()?.try_into()?;
-        assert!(self.chain_latest_provable_height == msg.post_height.try_into()?);
         self.client_latest_height = Some(self.chain_latest_provable_height);
-        Ok(res.0)
+        Ok((0, proofs.pop().unwrap()))
     }
 
     fn aggregate_messages(
         &mut self,
         client_id: ClientId,
+        ek_index: usize,
         interval: u64,
         msg_num: u64,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<u64, anyhow::Error> {
         assert!(msg_num > 0 && interval > 0, "invalid arguments");
         let mut proofs = Vec::new();
         for _ in 0..msg_num {
-            let proof = self.update_client(client_id.clone(), true)?;
+            let proof = self.update_client(client_id.clone(), vec![ek_index], true)?;
             self.wait_blocks(interval)?;
             proofs.push(proof);
         }
         let messages = proofs
             .iter()
-            .map(|p| p.message().map(|m| m.to_bytes()))
+            .map(|(_, p)| p.message().map(|m| m.to_bytes()))
             .collect::<Result<_, _>>()?;
-        let signatures = proofs.into_iter().map(|p| p.signature).collect();
+        let signatures = proofs.into_iter().map(|(_, p)| p.signature).collect();
         let input = AggregateMessagesInput {
             messages,
             signatures,
             current_timestamp: Time::now(),
-            signer: self.enclave_key.unwrap(),
+            signer: self.enclave_key[ek_index],
         };
         self.write_to_file("aggregate_messages_input", &input)?;
         let res = self.enclave.aggregate_messages(input)?;
         self.write_to_file("aggregate_messages_result", &res.0)?;
-        Ok(())
+        Ok(1)
     }
 
-    fn verify_connection(&mut self, client_id: ClientId) -> Result<(), anyhow::Error> {
+    fn verify_connection(
+        &mut self,
+        client_id: ClientId,
+        ek_index: usize,
+    ) -> Result<u64, anyhow::Error> {
         let res = self.rly.query_connection_proof(
             to_ibc_connection_id(
                 self.channel
@@ -378,16 +488,20 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
                 res.2.try_into().map_err(|e| anyhow!("{:?}", e))?,
                 merkle_proof_to_bytes(res.1)?,
             ),
-            signer: self.enclave_key.unwrap(),
+            signer: self.enclave_key[ek_index],
         };
         self.write_to_file("verify_connection_input", &input)?;
         let res = self.enclave.verify_membership(input)?;
         self.write_to_file("verify_connection_result", &res.0)?;
 
-        Ok(())
+        Ok(1)
     }
 
-    fn verify_channel(&mut self, client_id: ClientId) -> Result<(), anyhow::Error> {
+    fn verify_channel(
+        &mut self,
+        client_id: ClientId,
+        ek_index: usize,
+    ) -> Result<u64, anyhow::Error> {
         let res = self.rly.query_channel_proof(
             to_ibc_port_id(self.channel.channel.a_side.port_id().clone()),
             to_ibc_channel_id(self.channel.channel.a_side.channel_id().unwrap().clone()),
@@ -407,20 +521,21 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
                 res.2.try_into().map_err(|e| anyhow!("{:?}", e))?,
                 merkle_proof_to_bytes(res.1)?,
             ),
-            signer: self.enclave_key.unwrap(),
+            signer: self.enclave_key[ek_index],
         };
         self.write_to_file("verify_channel_input", &input)?;
         let res = self.enclave.verify_membership(input)?;
         self.write_to_file("verify_channel_result", &res.0)?;
 
-        Ok(())
+        Ok(1)
     }
 
     fn verify_packet(
         &mut self,
         client_id: ClientId,
+        ek_index: usize,
         sequence: Sequence,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<u64, anyhow::Error> {
         let res = self.rly.query_packet_proof(
             to_ibc_port_id(self.channel.channel.a_side.port_id().clone()),
             to_ibc_channel_id(self.channel.channel.a_side.channel_id().unwrap().clone()),
@@ -444,21 +559,22 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
                 res.2.try_into().map_err(|e| anyhow!("{:?}", e))?,
                 merkle_proof_to_bytes(res.1)?,
             ),
-            signer: self.enclave_key.unwrap(),
+            signer: self.enclave_key[ek_index],
         };
 
         self.write_to_file("verify_packet_input", &input)?;
         let res = self.enclave.verify_membership(input)?;
         self.write_to_file("verify_packet_result", &res.0)?;
 
-        Ok(())
+        Ok(1)
     }
 
     fn verify_packet_receipt_absence(
         &mut self,
         client_id: ClientId,
+        ek_index: usize,
         sequence: Sequence,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<u64, anyhow::Error> {
         let res = self.rly.query_packet_receipt_proof(
             to_ibc_port_id(self.channel.channel.a_side.port_id().clone()),
             to_ibc_channel_id(self.channel.channel.a_side.channel_id().unwrap().clone()),
@@ -481,14 +597,14 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
                 res.2.try_into().map_err(|e| anyhow!("{:?}", e))?,
                 merkle_proof_to_bytes(res.1)?,
             ),
-            signer: self.enclave_key.unwrap(),
+            signer: self.enclave_key[ek_index],
         };
 
         self.write_to_file("verify_packet_receipt_absence_input", &input)?;
         let res = self.enclave.verify_non_membership(input)?;
         self.write_to_file("verify_packet_receipt_absence_result", &res.0)?;
 
-        Ok(())
+        Ok(1)
     }
 
     fn wait_blocks(&mut self, n: u64) -> Result<(), anyhow::Error> {
@@ -582,7 +698,7 @@ impl BinaryChannelTest for CGenSuite {
         let config_a = chains.handle_a().config()?;
         let rly = Relayer::new(config_a, rt).unwrap();
         CommandFileGenerator::new(self.config.clone(), &self.enclave, rly, channel)
-            .gen(&self.commands, 1)
+            .gen(&self.commands, 1, self.eknum)
             .map_err(|e| Error::assertion(e.to_string()))
     }
 }
