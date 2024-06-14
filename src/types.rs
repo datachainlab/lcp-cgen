@@ -34,13 +34,14 @@ impl JSONSerializer for EndorsedAttestationVerificationReport {
         let this = self.clone();
         let avr = this.get_avr()?;
         let quote = avr.parse_quote()?;
+        let report_data = quote.report_data();
         Ok(serde_json::to_string(
             &JSONEndorsedAttestationVerificationReport {
                 avr: this.avr,
                 signature: this.signature,
                 signing_cert: this.signing_cert,
                 mrenclave: quote.get_mrenclave().m.to_vec(),
-                enclave_key: quote.get_enclave_key_address()?.0.to_vec(),
+                enclave_key: report_data.enclave_key().to_vec(),
             },
         )?)
     }
@@ -138,8 +139,6 @@ pub struct JSONCommitmentProof {
     #[serde(with = "serde_base64")]
     pub message: Vec<u8>,
     #[serde(with = "serde_base64")]
-    pub signer: Vec<u8>,
-    #[serde(with = "serde_base64")]
     pub signature: Vec<u8>,
 }
 
@@ -147,7 +146,6 @@ impl JSONSerializer for CommitmentProof {
     fn to_json_string(&self) -> Result<String, anyhow::Error> {
         Ok(serde_json::to_string(&JSONCommitmentProof {
             message: self.message.clone(),
-            signer: self.signer.to_vec(),
             signature: self.signature.clone(),
         })?)
     }
