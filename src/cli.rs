@@ -1,6 +1,7 @@
 use crate::gen::{CGenConfig, CGenSuite, Command, RemoteAttestationConfig};
 use anyhow::Result;
 use clap::Parser;
+use crypto::Address;
 use enclave_api::Enclave;
 use host_environment::Environment;
 use ibc_test_framework::prelude::run_binary_channel_test;
@@ -35,6 +36,9 @@ pub struct Cli {
 
     #[clap(long = "eknum", default_value = "1", help = "Enclave key number")]
     pub eknum: u32,
+
+    #[clap(long = "default_operator", help = "Default operator address")]
+    pub default_operator: Option<String>,
 
     /// Whether to simulate the remote attestation
     #[clap(long = "simulate", help = "Whether to simulate the remote attestation")]
@@ -76,7 +80,17 @@ impl Cli {
         }
 
         let config = self.build_config()?;
-        run_binary_channel_test(&CGenSuite::new(config, enclave, commands, self.eknum))?;
+        let default_operator: Option<Address> = self
+            .default_operator
+            .map(|s| Address::from_hex_string(&s))
+            .transpose()?;
+        run_binary_channel_test(&CGenSuite::new(
+            config,
+            enclave,
+            commands,
+            self.eknum,
+            default_operator,
+        ))?;
         Ok(())
     }
 

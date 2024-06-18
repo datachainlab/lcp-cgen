@@ -2,5 +2,5 @@
 
 ## Requirements
 
-- LCP >= v0.2.0
+- LCP >= v0.2.9
 

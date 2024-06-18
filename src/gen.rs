@@ -30,6 +30,7 @@ pub struct CGenSuite {
     enclave: Enclave<store::memory::MemStore>,
     commands: Vec<Command>,
     eknum: u32,
+    default_operator: Option<Address>,
 }
 
 impl CGenSuite {
@@ -38,12 +39,14 @@ impl CGenSuite {
         enclave: Enclave<store::memory::MemStore>,
         commands: Vec<Command>,
         eknum: u32,
+        default_operator: Option<Address>,
     ) -> Self {
         Self {
             config,
             enclave,
             commands,
             eknum,
+            default_operator,
         }
     }
 }
@@ -68,7 +71,7 @@ pub enum RemoteAttestationConfig {
 }
 
 pub enum Command {
-    GenerateEnclaveKey,
+    GenerateEnclaveKey(Option<Address>),
     CreateClient(u64),
     UpdateClient(Vec<usize>),
     AggregateMessages(u64, u64, u64),
@@ -84,7 +87,11 @@ impl FromStr for Command {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split(':').collect();
         match parts[0] {
-            "generate_enclave_key" => Ok(Command::GenerateEnclaveKey),
+            "generate_enclave_key" => Ok(Command::GenerateEnclaveKey(if parts.len() == 2 {
+                Some(Address::from_hex_string(parts[1])?)
+            } else {
+                None
+            })),
             "create_client" => {
                 if parts.len() != 2 {
                     bail!("`create_client` requires one argument");
@@ -154,6 +161,7 @@ pub struct CommandFileGenerator<'e, ChainA: ChainHandle, ChainB: ChainHandle> {
     config: CGenConfig,
     enclave: &'e Enclave<store::memory::MemStore>,
     rly: Relayer,
+    default_operator: Option<Address>,
 
     enclave_key: Vec<Address>,
     channel: ConnectedChannel<ChainA, ChainB>,
@@ -170,12 +178,14 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
         enclave: &'e Enclave<store::memory::MemStore>,
         rly: Relayer,
         channel: ConnectedChannel<ChainA, ChainB>,
+        default_operator: Option<Address>,
     ) -> Self {
         let chain_latest_provable_height = rly.query_latest_height().unwrap().decrement().unwrap();
         Self {
             config,
             enclave,
             rly,
+            default_operator,
             enclave_key: Default::default(),
             channel,
             command_sequence: 1,
@@ -199,7 +209,7 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
         }
         // generate enclave key `eknum` times
         for _ in 0..eknum {
-            self.generate_enclave_key()?;
+            self.generate_enclave_key(None)?;
             self.command_sequence += 1;
         }
         let (seq, client_id) = self.create_client(0)?;
@@ -209,7 +219,9 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
         for cmd in commands.iter() {
             assert!(self.command_sequence < 1000);
             self.command_sequence += match cmd {
-                Command::GenerateEnclaveKey => self.generate_enclave_key()?,
+                Command::GenerateEnclaveKey(operator) => {
+                    self.generate_enclave_key(operator.clone())?
+                }
                 Command::CreateClient(ek_index) => self.create_client(*ek_index as usize)?.0,
                 Command::UpdateClient(ek_indice) => {
                     self.update_client(client_id.clone(), ek_indice.clone(), false)?
@@ -247,7 +259,7 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
         Ok(())
     }
 
-    fn generate_enclave_key(&mut self) -> Result<u64, anyhow::Error> {
+    fn generate_enclave_key(&mut self, operator: Option<Address>) -> Result<u64, anyhow::Error> {
         let res = match self.enclave.generate_enclave_key(GenerateEnclaveKeyInput) {
             Ok(res) => res,
             Err(e) => {
@@ -260,18 +272,25 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
             self.enclave_key.len()
         );
         self.enclave_key.push(res.pub_key.as_address());
-        self.remote_attestation(res.pub_key.as_address())?;
+        let operator = operator.or(self.default_operator);
+        info!("operator: {:?}", operator);
+        self.remote_attestation(res.pub_key.as_address(), operator)?;
         Ok(1)
     }
 
     #[cfg(not(feature = "simulation"))]
-    fn remote_attestation(&mut self, ek: Address) -> Result<(), anyhow::Error> {
+    fn remote_attestation(
+        &mut self,
+        ek: Address,
+        operator: Option<Address>,
+    ) -> Result<(), anyhow::Error> {
         match self.config.ra_config.clone() {
             RemoteAttestationConfig::IAS { spid, ias_key } => {
                 let res = match self
                     .enclave
                     .ias_remote_attestation(IASRemoteAttestationInput {
                         target_enclave_key: ek,
+                        operator,
                         spid,
                         ias_key,
                     }) {
@@ -288,7 +307,11 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
     }
 
     #[cfg(feature = "simulation")]
-    fn remote_attestation(&mut self, ek: Address) -> Result<(), anyhow::Error> {
+    fn remote_attestation(
+        &mut self,
+        ek: Address,
+        operator: Option<Address>,
+    ) -> Result<(), anyhow::Error> {
         use attestation_report::EndorsedAttestationVerificationReport;
         use enclave_api::rsa::{
             pkcs1v15::SigningKey,
@@ -304,6 +327,7 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
                 let res = self.enclave.simulate_remote_attestation(
                     ecall_commands::SimulateRemoteAttestationInput {
                         target_enclave_key: ek,
+                        operator,
                         advisory_ids: vec![],
                         isv_enclave_quote_status: "OK".to_string(),
                     },
@@ -362,7 +386,6 @@ impl<'e, ChainA: ChainHandle, ChainB: ChainHandle> CommandFileGenerator<'e, Chai
                 client_id: client_id.clone(),
                 proof: JSONCommitmentProof {
                     message: res.proof.message,
-                    signer: res.proof.signer.to_vec(),
                     signature: res.proof.signature,
                 },
             },
@@ -697,9 +720,15 @@ impl BinaryChannelTest for CGenSuite {
         let rt = Arc::new(TokioRuntime::new()?);
         let config_a = chains.handle_a().config()?;
         let rly = Relayer::new(config_a, rt).unwrap();
-        CommandFileGenerator::new(self.config.clone(), &self.enclave, rly, channel)
-            .gen(&self.commands, 1, self.eknum)
-            .map_err(|e| Error::assertion(e.to_string()))
+        CommandFileGenerator::new(
+            self.config.clone(),
+            &self.enclave,
+            rly,
+            channel,
+            self.default_operator,
+        )
+        .gen(&self.commands, 1, self.eknum)
+        .map_err(|e| Error::assertion(e.to_string()))
     }
 }
 
